@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "92a225aa53863455f7e024de68de02c4"
-application_url = "https://thousand-declared-blustery.ngrok-free.dev"
+application_url = "https://bibs-staff-member-access-app.onrender.com"
 embedded = true
 name = "staff_details_access_app"
 
@@ -57,7 +57,7 @@ api_version = "2026-10"
   topics = [ "app/scopes_update" ]
 
 [auth]
-redirect_urls = [ "https://thousand-declared-blustery.ngrok-free.dev/api/auth" ]
+redirect_urls = [ "https://bibs-staff-member-access-app.onrender.com" ]
 
 [build]
 automatically_update_urls_on_dev = false
