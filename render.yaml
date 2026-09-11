@@ -1,15 +1,19 @@
 # Render Blueprint. In Render: New > Blueprint, point it at this repo.
 #
-# The database lives in Prisma Postgres, not on Render, so there is no
-# `databases:` block here — set DATABASE_URL and DIRECT_URL from the Prisma
-# Console instead.
+# There is no external database. Sessions live in a SQLite file on the attached
+# persistent disk, so no separate DB service is needed.
 #
-# Plan and region are intentionally left out so Render does not pin you to a
-# tier here — pick them in the dashboard after the first sync. Do NOT leave the
-# web service on the free tier for a live merchant: free services sleep when
-# idle, and the first request after that takes ~1 minute. The storefront app
-# proxy (/apps/company-staff) sits in a customer-facing page, so a cold start is
-# visible to buyers.
+# Two consequences of the disk, both deliberate:
+#   1. A disk requires a PAID instance type — free services have an ephemeral
+#      filesystem and would lose every session on each restart or spin-down.
+#      Pick the instance type in the dashboard after the first sync.
+#   2. A disk disables zero-downtime deploys: Render stops the old instance
+#      before starting the new one, so a redeploy costs a few seconds of
+#      downtime. That is the trade for not running a database.
+#
+# Free tier is not an option here anyway — free services sleep when idle and the
+# next request takes ~1 minute, and the storefront app proxy
+# (/apps/company-staff) renders inside a customer-facing page.
 services:
   - type: web
     name: staff-details-access-app
@@ -17,25 +21,24 @@ services:
     # --include=dev is required: `react-router build` needs the build toolchain,
     # and Render sets NODE_ENV=production, which makes npm skip devDependencies.
     buildCommand: npm install --include=dev && npm run build
-    # `setup` runs `prisma generate && prisma migrate deploy` — safe to repeat.
-    startCommand: npm run setup && npm run start
+    startCommand: npm run start
     healthCheckPath: /healthz
+    disk:
+      name: sessions
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
       # package.json engines: ">=20.19 <22 || >=22.12"
       - key: NODE_VERSION
         value: 22.12.0
+      # Must point inside the disk mount above, or sessions do not survive.
+      - key: SESSION_DB_PATH
+        value: /var/data/sessions.sqlite
       # Keep in sync with the scopes line in shopify.app.toml.
       - key: SCOPES
         value: write_products,write_metaobjects,write_metaobject_definitions,read_companies,read_customers,read_users
       # Set these in the Render dashboard — never commit them.
-      # DATABASE_URL: Prisma Postgres *pooled* string (pooled.db.prisma.io).
-      # DIRECT_URL:   Prisma Postgres *direct* string (db.prisma.io), used by
-      #               `prisma migrate deploy` on boot.
-      # SHOPIFY_APP_URL: this service's own https URL, no trailing slash.
-      - key: DATABASE_URL
-        sync: false
-      - key: DIRECT_URL
-        sync: false
+      # SHOPIFY_APP_URL is this service's own https URL, no trailing slash.
       - key: SHOPIFY_API_KEY
         sync: false
       - key: SHOPIFY_API_SECRET

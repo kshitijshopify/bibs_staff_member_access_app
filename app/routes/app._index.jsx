@@ -301,9 +301,12 @@ export default function Index() {
           </s-link>
         </s-paragraph>
         <s-paragraph>
-          <s-text>Database: </s-text>
-          <s-link href="https://www.prisma.io/" target="_blank">
-            Prisma
+          <s-text>Session storage: </s-text>
+          <s-link
+            href="https://github.com/Shopify/shopify-app-js/tree/main/packages/apps/session-storage/shopify-app-session-storage-sqlite"
+            target="_blank"
+          >
+            SQLite
           </s-link>
         </s-paragraph>
       </s-section>
