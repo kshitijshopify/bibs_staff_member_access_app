@@ -1,0 +1,63 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "92a225aa53863455f7e024de68de02c4"
+application_url = "https://thousand-declared-blustery.ngrok-free.dev"
+embedded = true
+name = "staff_details_access_app"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+# `read_users` is required for staff names, emails, and phone numbers. It is a
+# restricted scope: Shopify Support must enable it for this app first, otherwise
+# `shopify app deploy` rejects the version with an app_access validation error.
+# Once approved, append `,read_users` below and redeploy.
+scopes = "write_products,write_metaobjects,write_metaobject_definitions,read_companies,read_customers,read_users"
+
+[app_proxy]
+# Storefront requests to /apps/company-staff are proxied to /proxy/company-staff
+# on the app. A relative url lets the CLI prepend the current app URL on both
+# `shopify app dev` and `shopify app deploy`.
+url = "/proxy/company-staff"
+subpath = "company-staff"
+prefix = "apps"
+
+[product.metafields.app.demo_info]
+type = "single_line_text_field"
+name = "Demo Source Info"
+description = "Tracks products created by the Shopify app template for development"
+
+  [product.metafields.app.demo_info.access]
+  admin = "merchant_read_write"
+
+[metaobjects.app.example]
+name = "Example"
+description = "An example metaobject definition created by this template"
+
+  [metaobjects.app.example.access]
+  admin = "merchant_read_write"
+
+[metaobjects.app.example.fields.title]
+name = "Title"
+type = "single_line_text_field"
+required = true
+
+[metaobjects.app.example.fields.description]
+name = "Description"
+type = "multi_line_text_field"
+
+[webhooks]
+api_version = "2026-10"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = [ "app/uninstalled" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/scopes_update"
+  topics = [ "app/scopes_update" ]
+
+[auth]
+redirect_urls = [ "https://thousand-declared-blustery.ngrok-free.dev/api/auth" ]
+
+[build]
+automatically_update_urls_on_dev = false
