@@ -59,7 +59,6 @@ export async function loader({ request }) {
   return nodes;
 }
 ```
-   
 This template comes pre-configured with examples of:
 
 1. Setting up your Shopify app in [/app/shopify.server.ts](https://github.com/Shopify/shopify-app-template-react-router/blob/main/app/shopify.server.ts)
