@@ -26,6 +26,35 @@ const STAFF_MEMBER_SELECTION = `
 `;
 
 /**
+ * A photo of the customer's assigned account manager, kept on the customer.
+ *
+ * It cannot live on the staff member: `StaffMember` has no metafields at all.
+ * `reference` is what makes a `file_reference` metafield usable — its `value`
+ * is only a gid. Resolving that reference is why the app needs `read_files`;
+ * a metafield typed `url` would be readable from `value` alone.
+ */
+const STAFF_PROFILE_IMAGE_SELECTION = `
+  staffProfileImage: metafield(namespace: "custom", key: "staff_profile_image") {
+    id
+    type
+    value
+    reference {
+      ... on MediaImage {
+        # Rendered as a small avatar on a storefront page, so ask Shopify's CDN
+        # for a thumbnail rather than shipping the merchant's full-size upload.
+        image {
+          url(transform: { maxWidth: 256, maxHeight: 256 })
+          altText
+        }
+      }
+      ... on GenericFile {
+        url
+      }
+    }
+  }
+`;
+
+/**
  * Staff member fields live behind the `read_users` scope, which Shopify grants
  * only after a manual review. Callers still have to work before that approval
  * lands, so the staff selection is optional and we retry without it on denial.
@@ -104,6 +133,7 @@ function buildCustomerStaffQuery({ includeStaff }) {
     query CustomerCompanyStaff($customerId: ID!) {
       customer(id: $customerId) {
         id
+        ${STAFF_PROFILE_IMAGE_SELECTION}
         companyContactProfiles {
           id
           isMainContact
@@ -214,15 +244,37 @@ function collectStaff(locations) {
  * personal one. Drop it from this projection if the merchant would rather only
  * publish a business contact.
  */
-export function toPublicStaff(staff) {
+export function toPublicStaff(staff, profileImageUrl = null) {
   return {
     id: staff.id,
     name: staff.name,
     email: staff.email,
     phone: staff.phone,
+    // The merchant-managed photo wins over the Shopify account avatar, which
+    // is an auto-generated placeholder unless the staff member uploaded one.
+    profileImageUrl: profileImageUrl ?? staff.avatarUrl,
     avatarUrl: staff.avatarUrl,
     locations: staff.locations,
   };
+}
+
+/**
+ * Turns a `custom.staff_profile_image` metafield into a usable URL.
+ *
+ * Covers both shapes a merchant is likely to pick: a `file_reference`, where
+ * `value` is only a gid and the URL has to come from `reference`, and a plain
+ * `url`/text metafield, where `value` is the URL itself. The `http` test keeps
+ * an unresolved gid from being handed to the storefront as if it were a URL.
+ */
+function resolveStaffProfileImage(metafield) {
+  if (!metafield) return null;
+
+  const referenceUrl =
+    metafield.reference?.image?.url ?? metafield.reference?.url ?? null;
+  if (referenceUrl) return referenceUrl;
+
+  const value = metafield.value?.trim();
+  return value && /^https?:\/\//i.test(value) ? value : null;
 }
 
 function flattenCompany(company) {
@@ -378,6 +430,7 @@ export async function loadStaffForCustomer({ admin, session, customerId }) {
       company: null,
       companies: [],
       staff: [],
+      staffProfileImageUrl: null,
       staffAccessGranted: false,
       staffAccessError: null,
       setupError: "A valid customer id is required.",
@@ -394,6 +447,7 @@ export async function loadStaffForCustomer({ admin, session, customerId }) {
       company: null,
       companies: [],
       staff: [],
+      staffProfileImageUrl: null,
       staffAccessGranted: false,
       staffAccessError,
       setupError:
@@ -402,6 +456,9 @@ export async function loadStaffForCustomer({ admin, session, customerId }) {
     };
   }
 
+  const staffProfileImageUrl = resolveStaffProfileImage(
+    payload.data.customer?.staffProfileImage,
+  );
   const profiles = payload.data.customer?.companyContactProfiles ?? [];
   const allLocations = [];
 
@@ -430,6 +487,7 @@ export async function loadStaffForCustomer({ admin, session, customerId }) {
     company: companies[0] ?? null,
     companies,
     staff: collectStaff(allLocations),
+    staffProfileImageUrl,
     staffAccessGranted,
     staffAccessError,
     setupError: null,

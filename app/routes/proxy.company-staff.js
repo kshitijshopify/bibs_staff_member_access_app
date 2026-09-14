@@ -54,7 +54,12 @@ export const loader = async ({ request }) => {
     loggedIn: true,
     company: result.company,
     companies: result.companies,
-    staff: result.staff.map(toPublicStaff),
+    staffProfileImageUrl: result.staffProfileImageUrl,
+    // Explicit arrow, not a bare reference: Array.map would pass the index as
+    // the second argument and it would be read as the image URL.
+    staff: result.staff.map((staff) =>
+      toPublicStaff(staff, result.staffProfileImageUrl),
+    ),
     staffAccessGranted: result.staffAccessGranted,
   });
 };

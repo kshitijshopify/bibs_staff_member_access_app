@@ -36,7 +36,7 @@ services:
         value: /var/data/sessions.sqlite
       # Keep in sync with the scopes line in shopify.app.toml.
       - key: SCOPES
-        value: write_products,write_metaobjects,write_metaobject_definitions,read_companies,read_customers,read_users
+        value: write_products,write_metaobjects,write_metaobject_definitions,read_companies,read_customers,read_files,read_users
       # Set these in the Render dashboard — never commit them.
       # SHOPIFY_APP_URL is this service's own https URL, no trailing slash.
       - key: SHOPIFY_API_KEY

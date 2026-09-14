@@ -11,7 +11,7 @@ name = "staff_details_access_app"
 # restricted scope: Shopify Support must enable it for this app first, otherwise
 # `shopify app deploy` rejects the version with an app_access validation error.
 # Once approved, append `,read_users` below and redeploy.
-scopes = "write_products,write_metaobjects,write_metaobject_definitions,read_companies,read_customers,read_users"
+scopes = "write_products,write_metaobjects,write_metaobject_definitions,read_companies,read_customers,read_files,read_users"
 
 [app_proxy]
 # Storefront requests to /apps/company-staff are proxied to /proxy/company-staff
