@@ -201,6 +201,9 @@ function normalizeStaffMember(staff) {
     active: staff.active,
     isShopOwner: staff.isShopOwner,
     avatarUrl: staff.avatar?.url ?? null,
+    // Filled in by loadStaffProfileImages — see the note there on why the
+    // photo cannot be read straight off the staff member.
+    profileImageUrl: null,
     locations: [],
   };
 }
@@ -244,15 +247,17 @@ function collectStaff(locations) {
  * personal one. Drop it from this projection if the merchant would rather only
  * publish a business contact.
  */
-export function toPublicStaff(staff, profileImageUrl = null) {
+export function toPublicStaff(staff, fallbackImageUrl = null) {
   return {
     id: staff.id,
     name: staff.name,
     email: staff.email,
     phone: staff.phone,
-    // The merchant-managed photo wins over the Shopify account avatar, which
-    // is an auto-generated placeholder unless the staff member uploaded one.
-    profileImageUrl: profileImageUrl ?? staff.avatarUrl,
+    // Precedence: the photo on this staff member's own customer record, then
+    // one set on the viewing customer's record, then the Shopify account
+    // avatar — which is an auto-generated placeholder unless they uploaded one.
+    profileImageUrl:
+      staff.profileImageUrl ?? fallbackImageUrl ?? staff.avatarUrl,
     avatarUrl: staff.avatarUrl,
     locations: staff.locations,
   };
@@ -275,6 +280,124 @@ function resolveStaffProfileImage(metafield) {
 
   const value = metafield.value?.trim();
   return value && /^https?:\/\//i.test(value) ? value : null;
+}
+
+const STAFF_IMAGE_LOOKUP_LIMIT = 50;
+
+function buildStaffProfileImagesQuery() {
+  return `#graphql
+    query StaffProfileImages($query: String!, $first: Int!) {
+      customers(first: $first, query: $query) {
+        nodes {
+          id
+          displayName
+          firstName
+          lastName
+          defaultEmailAddress { emailAddress }
+          ${STAFF_PROFILE_IMAGE_SELECTION}
+        }
+      }
+    }`;
+}
+
+/** Quotes a value for Shopify search syntax so spaces do not split the term. */
+function quoteSearchValue(value) {
+  return `"${String(value).replace(/(["\\])/g, "\\$1")}"`;
+}
+
+function normalizeKey(value) {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function staffSearchClauses(staff) {
+  const clauses = [];
+
+  for (const member of staff) {
+    if (member.email) {
+      clauses.push(`email:${quoteSearchValue(member.email)}`);
+    } else if (member.firstName && member.lastName) {
+      clauses.push(
+        `(first_name:${quoteSearchValue(member.firstName)} AND ` +
+          `last_name:${quoteSearchValue(member.lastName)})`,
+      );
+    } else if (member.name) {
+      clauses.push(quoteSearchValue(member.name));
+    }
+  }
+
+  return clauses;
+}
+
+/**
+ * Finds each staff member's profile photo, keyed by staff id.
+ *
+ * The photo cannot be read off the staff member: `StaffMember` has no
+ * metafields at all. The merchant instead keeps `custom.staff_profile_image` on
+ * a Customer record standing for the same person, so this matches the two up.
+ *
+ * Email is tried first because it is unique. A full name is not — two customers
+ * can share one — so a name match is only trusted when exactly one customer
+ * carries that name, otherwise the staff member is left without a photo rather
+ * than shown the wrong person's face.
+ */
+async function loadStaffProfileImages(admin, staff) {
+  const clauses = staffSearchClauses(staff);
+  if (clauses.length === 0) return new Map();
+
+  const payload = await runQuery(admin, buildStaffProfileImagesQuery(), {
+    query: clauses.join(" OR "),
+    first: STAFF_IMAGE_LOOKUP_LIMIT,
+  });
+
+  if (payload.errors?.length) {
+    console.warn(
+      `[company-staff] Could not look up staff profile images: ` +
+        `${payload.errors[0].message}`,
+    );
+    return new Map();
+  }
+
+  const byEmail = new Map();
+  const byName = new Map();
+  const ambiguousNames = new Set();
+
+  for (const node of payload.data?.customers?.nodes ?? []) {
+    const imageUrl = resolveStaffProfileImage(node.staffProfileImage);
+    if (!imageUrl) continue;
+
+    const email = normalizeKey(node.defaultEmailAddress?.emailAddress);
+    if (email) byEmail.set(email, imageUrl);
+
+    const name = normalizeKey(
+      node.displayName ||
+        [node.firstName, node.lastName].filter(Boolean).join(" "),
+    );
+    if (!name) continue;
+
+    if (byName.has(name) && byName.get(name) !== imageUrl) {
+      ambiguousNames.add(name);
+    } else {
+      byName.set(name, imageUrl);
+    }
+  }
+
+  const imageByStaffId = new Map();
+
+  for (const member of staff) {
+    const email = normalizeKey(member.email);
+    const emailMatch = email ? byEmail.get(email) : null;
+    if (emailMatch) {
+      imageByStaffId.set(member.id, emailMatch);
+      continue;
+    }
+
+    const name = normalizeKey(member.name);
+    if (name && !ambiguousNames.has(name) && byName.has(name)) {
+      imageByStaffId.set(member.id, byName.get(name));
+    }
+  }
+
+  return imageByStaffId;
 }
 
 function flattenCompany(company) {
@@ -483,10 +606,20 @@ export async function loadStaffForCustomer({ admin, session, customerId }) {
     };
   });
 
+  const staff = collectStaff(allLocations);
+
+  // One extra request, and only when there is actually someone to look up.
+  if (staff.length > 0) {
+    const imageByStaffId = await loadStaffProfileImages(admin, staff);
+    for (const member of staff) {
+      member.profileImageUrl = imageByStaffId.get(member.id) ?? null;
+    }
+  }
+
   return {
     company: companies[0] ?? null,
     companies,
-    staff: collectStaff(allLocations),
+    staff,
     staffProfileImageUrl,
     staffAccessGranted,
     staffAccessError,
